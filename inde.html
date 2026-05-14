@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <
+  <title>PyroSync - Gestão de Extintores</title>
+</head>
+
+<body>
+  <header>
+    <div class="wrap topbar">
+      <div class="brand">
+        <div class="logo" aria-hidden="true"></div>
+        <h1>PyroSync</h1>
+      </div>
+      <nav aria-label="Navegação">
+        <a href="#inicio">Início</a>
+        <a href="#projeto">Projeto</a>
+        <a href="#status">Status</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="inicio" class="wrap">
+    <section class="hero">
+      <div class="card">
+        <h2>Base do seu index.html</h2>
+        <p class="lead">
+          Estrutura pronta com layout moderno (header / main / cards / footer). Edite os textos e conecte
+          o backend quando você quiser.
+        </p>
+
+        <div class="actions">
+          <button class="primary" type="button" id="btnDemo">Carregar demo</button>
+          <button type="button" id="btnLimpar">Limpar</button>
+        </div>
+
+        <div class="grid" aria-label="Destaques">
+          <div class="card small">
+            <h3>Seção 1</h3>
+            <p>Use para ações principais e resumo do projeto.</p>
+          </div>
+          <div class="card small">
+            <h3>Seção 2</h3>
+            <p>Coloque métricas ou estatísticas do sistema.</p>
+          </div>
+          <div class="card small">
+            <h3>Seção 3</h3>
+            <p>Área para logs, filas ou tarefas recentes.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" id="projeto">
+        <div style="padding:22px;">
+          <h2 style="font-size:18px;margin:0 0 10px;">Como usar</h2>
+          <p class="lead" style="font-size:14px;">
+            1) Abra este arquivo no navegador.
+            <br />2) Substitua o conteúdo das seções.
+            <br />3) Se futuramente tiver API, a gente adiciona fetch/axios aqui.
+          </p>
+          <div style="margin-top:16px; color:var(--muted); font-weight:800; font-size:13px;">
+            Próximos passos sugeridos:
+          </div>
+          <ul style="margin:10px 0 0 18px; color:var(--muted); line-height:1.6; font-weight:700;">
+            <li>Conectar com o backend</li>
+            <li>Listar dados dinâmicos</li>
+            <li>Adicionar formulários</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="status" class="content" aria-label="Conteúdo">
+      <div class="card table">
+        <div class="title">
+          <strong>Status</strong>
+          <span>Exemplo de itens</span>
+        </div>
+
+        <div id="items"></div>
+      </div>
+
+      <div class="card table">
+        <div class="title">
+          <strong>Observações</strong>
+          <span>Área livre</span>
+        </div>
+        <p style="margin:0; color:var(--muted); line-height:1.7; font-weight:650;">
+          Aqui você pode colocar:
+          <br />• resumo do sistema
+          <br />• botões para sincronizar
+          <br />• mensagens de validação
+          <br />• instruções para o usuário
+        </p>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap">© <span id="year"></span> PyroSync. Todos os direitos reservados.</div>
+  </footer>
+
+  <div class="toast" id="toast" role="status" aria-live="polite">
+    <p class="t-title" id="toastTitle">Pronto</p>
+    <p class="t-text" id="toastText">Demo carregada.</p>
+  </div>
+</body>
+</html>
+
