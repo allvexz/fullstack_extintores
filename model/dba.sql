@@ -13,7 +13,8 @@
     CREATE TABLE Brigadistas (
         id_brigadista INT AUTO_INCREMENT PRIMARY KEY,
         nome VARCHAR(100) NOT NULL,
-        setor VARCHAR(50) NOT NULL
+        setor VARCHAR(50) NOT NULL,
+        senha VARCHAR(255) NOT NULL
     );
 
     -- ============================================================
@@ -107,8 +108,13 @@
         id_relatorio INT AUTO_INCREMENT PRIMARY KEY,
 
         id_inspecao INT NOT NULL,
+        id_extintor INT NOT NULL,
         data_relatorio DATE NOT NULL,
         situacao VARCHAR(100) NOT NULL,
+
+        FOREIGN KEY (id_extintor)
+            REFERENCES Extintores(id_extintor)
+            ON DELETE CASCADE,
 
         FOREIGN KEY (id_inspecao)
             REFERENCES Inspecoes(id_inspecao)
@@ -121,9 +127,9 @@
     -- ============================================================
 
     INSERT INTO Brigadistas
-    (id_brigadista, nome, setor)
+    (id_brigadista, nome, setor, senha)
     VALUES
-    (1020, 'Victor Augusto', 'Segurança do Trabalho');
+    (1020, 'Victor Augusto', 'Segurança do Trabalho', 'pbkdf2:sha256:600000$examplehash'); -- Exemplo de hash
 
     INSERT INTO Extintores
     (
@@ -242,12 +248,14 @@
     INSERT INTO Relatorios_Inspecao
     (
     id_inspecao,
+    id_extintor,
     data_relatorio,
     situacao
     )
     VALUES
     (
     1,
+    5003,
     '2026-05-30',
     'Equipamento aprovado para uso'
     );

@@ -4,6 +4,8 @@ from mysql.connector import Error
 import os
 from datetime import datetime
 from dotenv import load_dotenv
+from werkzeug.security import generate_password_hash
+# from twilio.rest import Client # Descomente após instalar: pip install twilio
 
 # Carrega as variáveis do arquivo .env automaticamente
 load_dotenv()
@@ -17,6 +19,23 @@ db_config = {
     "password": os.getenv("DB_PASSWORD", ""),
     "database": os.getenv("DB_DATABASE", "pyrosync")
 }
+
+# Configuração Twilio (Placeholder)
+TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
+TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
+TWILIO_PHONE_FROM = os.getenv("TWILIO_PHONE_FROM")
+
+def enviar_notificacao_manutencao(extintor_id, motivo):
+    """Função para enviar alerta via Twilio quando um extintor é reprovado."""
+    # if not TWILIO_ACCOUNT_SID: return
+    # client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+    # message = client.messages.create(
+    #     body=f"Alerta Pyrosync: Extintor {extintor_id} reprovado! Motivo: {motivo}",
+    #     from_=TWILIO_PHONE_FROM,
+    #     to=os.getenv("ADMIN_PHONE")
+    # )
+    print(f"DEBUG: Enviando alerta para extintor {extintor_id}: {motivo}")
+    pass
 
 # ============================================================
 # ROTAS: BRIGADISTAS
@@ -44,16 +63,18 @@ def criar_brigadista():
     if not dados:
         return jsonify({'erro': 'JSON ausente'}), 400
         
-    for campo in ['nome', 'setor']:
+    for campo in ['nome', 'setor', 'senha']:
         if campo not in dados:
             return jsonify({'erro': f'Campo obrigatório: {campo}'}), 400
+
+    senha_hash = generate_password_hash(dados['senha'])
 
     conn = None
     try:
         conn = mysql.connector.connect(**db_config)
         cursor = conn.cursor()
-        cursor.execute("INSERT INTO Brigadistas (nome, setor) VALUES (%s, %s)", 
-                       (dados['nome'], dados['setor']))
+        cursor.execute("INSERT INTO Brigadistas (nome, setor, senha) VALUES (%s, %s, %s)", 
+                       (dados['nome'], dados['setor'], senha_hash))
         conn.commit()
         return jsonify({'mensagem': 'Brigadista cadastrado'}), 201
     except Error as e:
@@ -96,6 +117,36 @@ def listar_extintores_vencidos():
         return jsonify({"data_verificacao": hoje, "total_vencidos": len(res), "extintores": res}), 200
     except Error as e:
         return jsonify({'erro': 'Erro no banco de dados', 'detalhes': str(e)}), 500
+    finally:
+        if conn and conn.is_connected():
+            cursor.close()
+            conn.close()
+
+@app.route('/extintores/analise-vencimentos', methods=['GET'])
+def analise_vencimentos():
+    """Calcula prazos e status de validade de todos os extintores."""
+    q = "SELECT id_extintor, numero_serie, data_validade_carga, localizacao_atual FROM Extintores"
+    conn = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute(q)
+        extintores = cursor.fetchall()
+        
+        hoje = datetime.now().date()
+        resultado = []
+        for ex in extintores:
+            validade = ex['data_validade_carga']
+            dias_restantes = (validade - hoje).days
+            status = "OK" if dias_restantes > 30 else "CRÍTICO" if dias_restantes >= 0 else "VENCIDO"
+            
+            ex['dias_para_vencer'] = dias_restantes
+            ex['situacao_validade'] = status
+            resultado.append(ex)
+            
+        return jsonify(resultado), 200
+    except Error as e:
+        return jsonify({'erro': 'Erro no cálculo', 'detalhes': str(e)}), 500
     finally:
         if conn and conn.is_connected():
             cursor.close()
@@ -151,6 +202,7 @@ def criar_inspecao():
         if motivos_reprovacao:
             situacao_final = f"REPROVADO: {', '.join(motivos_reprovacao)}"
             cursor.execute("UPDATE Extintores SET status_equipamento = 'Em Manutenção' WHERE id_extintor = %s", (dados['id_extintor'],))
+            enviar_notificacao_manutencao(dados['id_extintor'], situacao_final)
         else:
             situacao_final = "Equipamento aprovado para uso"
 
