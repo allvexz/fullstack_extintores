@@ -12,7 +12,7 @@ from werkzeug.security import generate_password_hash
 # Carrega as variáveis do arquivo .env automaticamente
 load_dotenv()
 
-app = Flask(_name_)
+app = Flask(__name__)
 
 # Configuração puxando diretamente do arquivo .env configurado
 db_config = {
@@ -106,13 +106,10 @@ def criar_treinamento():
             return jsonify({'erro': f'Campo obrigatório: {campo}'}), 400
 
     try:
-        # Converte a string recebida (ex: "2026-06-11") para um objeto date do Python
         data_treinamento_obj = datetime.strptime(dados['data_treinamento'], '%Y-%m-%d').date()
-        
-        # LÓGICA DE NEGÓCIO EXIGIDA: Calcula o vencimento adicionando exatamente 1 ano (12 meses)
+
         data_vencimento_obj = data_treinamento_obj + relativedelta(years=1)
         
-        # Converte de volta para string no formato do MySQL (YYYY-MM-DD)
         data_vencimento_str = data_vencimento_obj.strftime('%Y-%m-%d')
     except ValueError:
         return jsonify({'erro': 'Formato de data inválido. Use AAAA-MM-DD'}), 400

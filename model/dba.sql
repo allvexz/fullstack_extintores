@@ -146,3 +146,22 @@ FROM Relatorios_Inspecao r
 INNER JOIN Inspecoes i ON r.id_inspecao = i.id_inspecao
 INNER JOIN Extintores e ON i.id_extintor = e.id_extintor
 LEFT JOIN Brigadistas b ON i.id_brigadista = b.id_brigadista;
+
+-- ============================================================
+-- BLOCO ADICIONAL: INF07SST
+-- Observação: o trecho de CREATE TABLE Extintores do INF07SST
+-- estava incompleto no enunciado (aparecia truncado em “d...”).
+-- Como você respondeu “não precisa criar”, este bloco adiciona apenas
+-- a base e a tabela Brigadistas com telefone/email/whatsapp.
+-- ============================================================
+
+CREATE DATABASE IF NOT EXISTS INF07SST;
+USE INF07SST;
+
+CREATE TABLE IF NOT EXISTS Brigadistas (
+    id_brigadista INT PRIMARY KEY,
+    nome VARCHAR(100) NOT NULL,
+    telefone VARCHAR(20),
+    email VARCHAR(100),
+    whatsapp VARCHAR(20)
+);
