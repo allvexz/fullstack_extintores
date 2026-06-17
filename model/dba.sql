@@ -2,23 +2,32 @@
 -- SISTEMA PYROSYNC - INSPEÇÃO DE EXTINTORES COM QR CODE
 -- ============================================================
 
-DROP DATABASE IF EXISTS pyrosync;
-CREATE DATABASE pyrosync;
+-- PRIMEIRO: Garante a criação e o uso do banco de dados correto
+CREATE DATABASE IF NOT EXISTS pyrosync;
 USE pyrosync;
 
+-- SEGUNDO: Apaga as tabelas antigas se elas existirem dentro do pyrosync (na ordem certa de chaves estrangeiras)
+DROP TABLE IF EXISTS Relatorios_Inspecao;
+DROP TABLE IF EXISTS Inspecoes;
+DROP TABLE IF EXISTS Extintores;
+DROP TABLE IF EXISTS Brigadistas;
+
 -- ============================================================
--- TABELA DE BRIGADISTAS
+-- 1. TABELA DE BRIGADISTAS
 -- ============================================================
 
 CREATE TABLE Brigadistas (
     id_brigadista INT AUTO_INCREMENT PRIMARY KEY,
     nome VARCHAR(100) NOT NULL,
-    setor VARCHAR(50) NOT NULL,
-    senha VARCHAR(255) NOT NULL
+    setor VARCHAR(50) NOT NULL, -- Corrigido para 50 para aceitar 'Segurança do Trabalho'
+    senha VARCHAR(255) NOT NULL,
+    telefone VARCHAR(20) NULL,
+    email VARCHAR(100) NULL,
+    whatsapp VARCHAR(20) NULL
 );
 
 -- ============================================================
--- TABELA DE EXTINTORES
+-- 2. TABELA DE EXTINTORES
 -- ============================================================
 
 CREATE TABLE Extintores (
@@ -47,7 +56,7 @@ CREATE TABLE Extintores (
 );
 
 -- ============================================================
--- TABELA DE INSPEÇÕES
+-- 3. TABELA DE INSPEÇÕES
 -- ============================================================
 
 CREATE TABLE Inspecoes (
@@ -55,6 +64,7 @@ CREATE TABLE Inspecoes (
     id_brigadista INT NULL,
     id_extintor INT NOT NULL,
     data_inspecao DATE NOT NULL,
+    data_vencimento DATE NULL, -- Campo para cálculo automático de 1 ano
     hora_inspecao TIME NOT NULL,
     numero_lacre VARCHAR(30) NOT NULL,
     confirmar_tipo BOOLEAN NOT NULL,
@@ -68,7 +78,7 @@ CREATE TABLE Inspecoes (
 );
 
 -- ============================================================
--- TABELA DE RELATÓRIOS (Otimizada - sem dados redundantes)
+-- 4. TABELA DE RELATÓRIOS
 -- ============================================================
 
 CREATE TABLE Relatorios_Inspecao (
@@ -79,18 +89,43 @@ CREATE TABLE Relatorios_Inspecao (
 );
 
 -- ============================================================
--- AUTOMATIZAÇÃO: TRIGGER PARA GERAR RELATÓRIO AUTOMATICAMENTE
+-- 4.1. TABELA DE TREINAMENTOS (Faltava no seu script)
+-- ============================================================
+
+CREATE TABLE Registros_Treinamento (
+    id_treinamento INT AUTO_INCREMENT PRIMARY KEY,
+    id_brigadista INT NOT NULL,
+    nome_treinamento VARCHAR(100) NOT NULL,
+    data_treinamento DATE NOT NULL,
+    data_vencimento DATE NOT NULL,
+    FOREIGN KEY (id_brigadista) REFERENCES Brigadistas(id_brigadista) ON DELETE CASCADE
+);
+
+-- ============================================================
+-- 5. AUTOMATIZAÇÃO (TRIGGERS)
 -- ============================================================
 
 DELIMITER $$
+
+-- GATILHO 1: Calcula o vencimento de 1 ano ANTES de salvar a inspeção no banco
+CREATE TRIGGER tg_calcular_vencimento
+BEFORE INSERT ON Inspecoes
+FOR EACH ROW
+BEGIN
+    SET NEW.data_vencimento = DATE_ADD(NEW.data_inspecao, INTERVAL 1 YEAR);
+END$$
+
+-- GATILHO 2: Gera a situação do relatório de SST DEPOIS que a inspeção é salva
 CREATE TRIGGER tg_gerar_relatorio
 AFTER INSERT ON Inspecoes
 FOR EACH ROW
 BEGIN
     DECLARE v_situacao VARCHAR(100);
     
-    -- Lógica simples de aprovação
-    IF NEW.status_manometro = 'Normal' AND NEW.status_lacre = 'Intacto' AND NEW.status_bocal = 'Desobstruído' AND NEW.avaria_externa = 'Nenhuma' THEN
+    IF NEW.status_manometro = 'Normal' 
+       AND NEW.status_lacre = 'Intacto' 
+       AND NEW.status_bocal = 'Desobstruído' 
+       AND NEW.avaria_externa = 'Nenhuma' THEN
         SET v_situacao = 'Equipamento aprovado para uso';
     ELSE
         SET v_situacao = 'Equipamento reprovado - Necessita manutenção';
@@ -99,15 +134,18 @@ BEGIN
     INSERT INTO Relatorios_Inspecao (id_inspecao, situacao)
     VALUES (NEW.id_inspecao, v_situacao);
 END$$
+
 DELIMITER ;
 
 -- ============================================================
--- DADOS DE EXEMPLO
+-- 6. DADOS DE TESTE
 -- ============================================================
 
-INSERT INTO Brigadistas (id_brigadista, nome, setor, senha)
-VALUES (1020, 'Victor Augusto', 'Segurança do Trabalho', 'pbkdf2:sha256:600000$examplehash');
+-- Inserindo Brigadista (Agora entra perfeitamente sem estourar o limite de caracteres)
+INSERT INTO Brigadistas (id_brigadista, nome, setor, senha, telefone, email, whatsapp)
+VALUES (1020, 'Victor Augusto', 'Segurança do Trabalho', 'pbkdf2:sha256:600000$examplehash', '3199297-5647', 'victor@pyrosync.com', '3199297-5647');
 
+-- Inserindo Extintores de Exemplo
 INSERT INTO Extintores 
 (id_extintor, qr_code, numero_serie, fabricante, tipo, classificacao, capacidade_carga, unidade_medida, data_fabricacao, data_validade_carga, localizacao_atual, status_equipamento)
 VALUES
@@ -117,51 +155,29 @@ VALUES
 (5004, 'QR-5004', 'PQ-4444-2026', 'Mocelin', 'Pó Químico PQS', 'ABC', 8.00, 'KG', '2023-11-12', '2026-11-12', 'Oficina de Manutenção', 'Ativo');
 
 -- ============================================================
--- INSPEÇÃO REALIZADA APÓS LEITURA DO QR CODE
+-- 7. SIMULAÇÃO DE INSPEÇÃO (O Python vai disparar isso via QR Code)
 -- ============================================================
 
--- Nota: O ID gerado aqui automaticamente para id_inspecao será 1.
 INSERT INTO Inspecoes 
 (id_brigadista, id_extintor, data_inspecao, hora_inspecao, numero_lacre, confirmar_tipo, status_manometro, status_lacre, status_bocal, avaria_externa, observacoes)
 VALUES
-(1020, 5003, '2026-05-30', '14:30:00', 'LAC-9999', 1, 'Normal', 'Intacto', 'Desobstruído', 'Nenhuma', 'Equipamento em perfeito estado.');
-
--- O INSERT na tabela Relatorios_Inspecao NÃO é mais necessário! A Trigger faz isso sozinha.
+(1020, 5003, '2026-06-16', '19:15:00', 'LAC-9999', 1, 'Normal', 'Intacto', 'Desobstruído', 'Nenhuma', 'Equipamento testado e aprovado no workshop.');
 
 -- ============================================================
--- CONSULTA DO RELATÓRIO FINAL (Ajustada para o novo modelo)
+-- 8. CONSULTA DO RELATÓRIO FINAL
 -- ============================================================
 
 SELECT
     e.qr_code AS QR_Code,
     e.numero_serie AS Extintor,
     e.localizacao_atual AS Localizacao,
-    i.status_lacre AS Lacre,
-    i.status_manometro AS Manometro,
-    i.status_bocal AS Bocal,
+    i.data_inspecao AS `Data_Inspecao`,
+    i.data_vencimento AS Vencimento_Calculado,
     b.nome AS Responsavel,
-    i.data_inspecao AS Data,
-    r.situacao AS Situacao
+    b.telefone AS Contato_Telefone,
+    b.whatsapp AS Contato_Whats,
+    r.situacao AS `Situacao_Final`
 FROM Relatorios_Inspecao r
 INNER JOIN Inspecoes i ON r.id_inspecao = i.id_inspecao
 INNER JOIN Extintores e ON i.id_extintor = e.id_extintor
 LEFT JOIN Brigadistas b ON i.id_brigadista = b.id_brigadista;
-
--- ============================================================
--- BLOCO ADICIONAL: INF07SST
--- Observação: o trecho de CREATE TABLE Extintores do INF07SST
--- estava incompleto no enunciado (aparecia truncado em “d...”).
--- Como você respondeu “não precisa criar”, este bloco adiciona apenas
--- a base e a tabela Brigadistas com telefone/email/whatsapp.
--- ============================================================
-
-CREATE DATABASE IF NOT EXISTS INF07SST;
-USE INF07SST;
-
-CREATE TABLE IF NOT EXISTS Brigadistas (
-    id_brigadista INT PRIMARY KEY,
-    nome VARCHAR(100) NOT NULL,
-    telefone VARCHAR(20),
-    email VARCHAR(100),
-    whatsapp VARCHAR(20)
-);

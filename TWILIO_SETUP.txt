@@ -1,0 +1,13 @@
+Para usar Twilio com segurança (sem hardcode no código):
+
+1) Crie/edite o arquivo .env na raiz do projeto (ao lado de app.py).
+2) Adicione estas variáveis:
+
+TWILIO_ACCOUNT_SID=SEU_ACCOUNT_SID
+TWILIO_AUTH_TOKEN=SEU_AUTH_TOKEN
+TWILIO_FROM=whatsapp:+SEU_NUMERO_REMETENTE
+TWILIO_TO=whatsapp:+NUMERO_DESTINATARIO
+
+3) No app.py, movemos o envio que estava quebrando o endpoint /relatorios para uma função separada.
+
+Observação: este arquivo é apenas um guia de configuração.
