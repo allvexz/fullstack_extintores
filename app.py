@@ -162,8 +162,118 @@ def criar_brigadista():
             ),
         )
         conn.commit()
-        return jsonify({"mensagem": "Brigadista cadastrado com sucesso"}), 201
+        return (
+            jsonify({"mensagem": "Brigadista cadastrado com sucesso", "id_brigadista": cursor.lastrowid}),
+            201,
+        )
     except Error as e:
+        return jsonify({"erro": "Erro no banco de dados", "detalhes": str(e)}), 500
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
+
+@app.route("/brigadistas/<int:id_brigadista>", methods=["GET"])
+def obter_brigadista(id_brigadista):
+    conn = None
+    cursor = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute(
+            "SELECT id_brigadista, nome, setor, telefone, email, whatsapp FROM Brigadistas WHERE id_brigadista = %s",
+            (id_brigadista,),
+        )
+        res = cursor.fetchone()
+        if not res:
+            return jsonify({"erro": "Brigadista não encontrado"}), 404
+        return jsonify(res), 200
+    except Error as e:
+        return jsonify({"erro": "Erro no banco de dados", "detalhes": str(e)}), 500
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
+
+@app.route("/brigadistas/<int:id_brigadista>", methods=["PUT"])
+def atualizar_brigadista(id_brigadista):
+    """Atualiza dados do brigadista. Senha é opcional - só atualiza se enviada."""
+    dados = request.get_json()
+    if not dados:
+        return jsonify({"erro": "JSON ausente"}), 400
+
+    campos_obrigatorios = ["nome", "setor", "telefone", "email", "whatsapp"]
+    for campo in campos_obrigatorios:
+        if campo not in dados:
+            return jsonify({"erro": f"Campo obrigatório: {campo}"}), 400
+
+    conn = None
+    cursor = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor()
+
+        if dados.get("senha"):
+            senha_hash = generate_password_hash(dados["senha"])
+            q = """
+                UPDATE Brigadistas
+                SET nome = %s, setor = %s, senha = %s, telefone = %s, email = %s, whatsapp = %s
+                WHERE id_brigadista = %s
+            """
+            params = (
+                dados["nome"], dados["setor"], senha_hash,
+                dados["telefone"], dados["email"], dados["whatsapp"], id_brigadista,
+            )
+        else:
+            q = """
+                UPDATE Brigadistas
+                SET nome = %s, setor = %s, telefone = %s, email = %s, whatsapp = %s
+                WHERE id_brigadista = %s
+            """
+            params = (
+                dados["nome"], dados["setor"],
+                dados["telefone"], dados["email"], dados["whatsapp"], id_brigadista,
+            )
+
+        cursor.execute(q, params)
+        conn.commit()
+
+        if cursor.rowcount == 0:
+            return jsonify({"erro": "Brigadista não encontrado"}), 404
+
+        return jsonify({"mensagem": "Brigadista atualizado com sucesso"}), 200
+    except Error as e:
+        if conn:
+            conn.rollback()
+        return jsonify({"erro": "Erro no banco de dados", "detalhes": str(e)}), 500
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
+
+@app.route("/brigadistas/<int:id_brigadista>", methods=["DELETE"])
+def deletar_brigadista(id_brigadista):
+    conn = None
+    cursor = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM Brigadistas WHERE id_brigadista = %s", (id_brigadista,))
+        conn.commit()
+
+        if cursor.rowcount == 0:
+            return jsonify({"erro": "Brigadista não encontrado"}), 404
+
+        return jsonify({"mensagem": "Brigadista removido com sucesso"}), 200
+    except Error as e:
+        if conn:
+            conn.rollback()
         return jsonify({"erro": "Erro no banco de dados", "detalhes": str(e)}), 500
     finally:
         if cursor:
@@ -258,6 +368,7 @@ def criar_treinamento():
             jsonify(
                 {
                     "mensagem": "Treinamento registrado com sucesso!",
+                    "id_treinamento": cursor.lastrowid,
                     "data_treinamento": dados["data_treinamento"],
                     "data_vencimento_calculada": data_vencimento_str,
                 }
@@ -265,6 +376,114 @@ def criar_treinamento():
             201,
         )
     except Error as e:
+        return jsonify({"erro": "Erro no banco de dados", "detalhes": str(e)}), 500
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
+
+@app.route("/treinamentos/<int:id_treinamento>", methods=["GET"])
+def obter_treinamento(id_treinamento):
+    conn = None
+    cursor = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute(
+            "SELECT * FROM Registros_Treinamento WHERE id_treinamento = %s",
+            (id_treinamento,),
+        )
+        res = cursor.fetchone()
+        if not res:
+            return jsonify({"erro": "Treinamento não encontrado"}), 404
+        return jsonify(converter_datas_e_horas(res)), 200
+    except Error as e:
+        return jsonify({"erro": "Erro no banco de dados", "detalhes": str(e)}), 500
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
+
+@app.route("/treinamentos/<int:id_treinamento>", methods=["PUT"])
+def atualizar_treinamento(id_treinamento):
+    """Atualiza um treinamento. Recalcula data_vencimento se data_treinamento mudar."""
+    dados = request.get_json()
+    if not dados:
+        return jsonify({"erro": "JSON ausente"}), 400
+
+    campos_obrigatorios = ["id_brigadista", "nome_treinamento", "data_treinamento"]
+    for campo in campos_obrigatorios:
+        if campo not in dados:
+            return jsonify({"erro": f"Campo obrigatório: {campo}"}), 400
+
+    try:
+        data_treinamento_obj = datetime.strptime(dados["data_treinamento"], "%Y-%m-%d").date()
+        data_vencimento_str = (data_treinamento_obj + relativedelta(years=1)).strftime("%Y-%m-%d")
+    except ValueError:
+        return jsonify({"erro": "Formato de data inválido. Use AAAA-MM-DD"}), 400
+
+    conn = None
+    cursor = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor()
+        q = """
+            UPDATE Registros_Treinamento
+            SET id_brigadista = %s, nome_treinamento = %s, data_treinamento = %s,
+                data_vencimento = %s, carga_horaria = %s, instrutor = %s
+            WHERE id_treinamento = %s
+        """
+        cursor.execute(
+            q,
+            (
+                dados["id_brigadista"],
+                dados["nome_treinamento"],
+                dados["data_treinamento"],
+                data_vencimento_str,
+                dados.get("carga_horaria"),
+                dados.get("instrutor"),
+                id_treinamento,
+            ),
+        )
+        conn.commit()
+
+        if cursor.rowcount == 0:
+            return jsonify({"erro": "Treinamento não encontrado"}), 404
+
+        return jsonify({"mensagem": "Treinamento atualizado com sucesso", "data_vencimento_calculada": data_vencimento_str}), 200
+    except Error as e:
+        if conn:
+            conn.rollback()
+        return jsonify({"erro": "Erro no banco de dados", "detalhes": str(e)}), 500
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
+
+@app.route("/treinamentos/<int:id_treinamento>", methods=["DELETE"])
+def deletar_treinamento(id_treinamento):
+    """Remove um treinamento (relatórios vinculados são removidos em cascata)."""
+    conn = None
+    cursor = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM Registros_Treinamento WHERE id_treinamento = %s", (id_treinamento,))
+        conn.commit()
+
+        if cursor.rowcount == 0:
+            return jsonify({"erro": "Treinamento não encontrado"}), 404
+
+        return jsonify({"mensagem": "Treinamento removido com sucesso"}), 200
+    except Error as e:
+        if conn:
+            conn.rollback()
         return jsonify({"erro": "Erro no banco de dados", "detalhes": str(e)}), 500
     finally:
         if cursor:
@@ -289,6 +508,170 @@ def listar_extintores():
         res = cursor.fetchall()
         return jsonify(res), 200
     except Error as e:
+        return jsonify({"erro": "Erro no banco de dados", "detalhes": str(e)}), 500
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
+
+@app.route("/extintores", methods=["POST"])
+def criar_extintor():
+    dados = request.get_json()
+    if not dados:
+        return jsonify({"erro": "JSON ausente"}), 400
+
+    campos_obrigatorios = [
+        "qr_code", "numero_serie", "fabricante", "tipo", "classificacao",
+        "capacidade_carga", "unidade_medida", "data_fabricacao",
+        "data_validade_carga", "localizacao_atual",
+    ]
+    for campo in campos_obrigatorios:
+        if campo not in dados:
+            return jsonify({"erro": f"Campo obrigatório: {campo}"}), 400
+
+    conn = None
+    cursor = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor()
+        q = """
+            INSERT INTO Extintores
+                (qr_code, numero_serie, fabricante, tipo, classificacao, capacidade_carga,
+                 unidade_medida, data_fabricacao, data_validade_carga, localizacao_atual, status_equipamento)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """
+        cursor.execute(
+            q,
+            (
+                dados["qr_code"],
+                dados["numero_serie"],
+                dados["fabricante"],
+                dados["tipo"],
+                dados["classificacao"],
+                dados["capacidade_carga"],
+                dados["unidade_medida"],
+                dados["data_fabricacao"],
+                dados["data_validade_carga"],
+                dados["localizacao_atual"],
+                dados.get("status_equipamento", "Ativo"),
+            ),
+        )
+        conn.commit()
+        return (
+            jsonify({"mensagem": "Extintor cadastrado com sucesso", "id_extintor": cursor.lastrowid}),
+            201,
+        )
+    except Error as e:
+        return jsonify({"erro": "Erro no banco de dados", "detalhes": str(e)}), 500
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
+
+@app.route("/extintores/<int:id_extintor>", methods=["GET"])
+def obter_extintor(id_extintor):
+    conn = None
+    cursor = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT * FROM Extintores WHERE id_extintor = %s", (id_extintor,))
+        res = cursor.fetchone()
+        if not res:
+            return jsonify({"erro": "Extintor não encontrado"}), 404
+        return jsonify(converter_datas_e_horas(res)), 200
+    except Error as e:
+        return jsonify({"erro": "Erro no banco de dados", "detalhes": str(e)}), 500
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
+
+@app.route("/extintores/<int:id_extintor>", methods=["PUT"])
+def atualizar_extintor(id_extintor):
+    dados = request.get_json()
+    if not dados:
+        return jsonify({"erro": "JSON ausente"}), 400
+
+    campos_obrigatorios = [
+        "qr_code", "numero_serie", "fabricante", "tipo", "classificacao",
+        "capacidade_carga", "unidade_medida", "data_fabricacao",
+        "data_validade_carga", "localizacao_atual",
+    ]
+    for campo in campos_obrigatorios:
+        if campo not in dados:
+            return jsonify({"erro": f"Campo obrigatório: {campo}"}), 400
+
+    conn = None
+    cursor = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor()
+        q = """
+            UPDATE Extintores
+            SET qr_code = %s, numero_serie = %s, fabricante = %s, tipo = %s, classificacao = %s,
+                capacidade_carga = %s, unidade_medida = %s, data_fabricacao = %s,
+                data_validade_carga = %s, localizacao_atual = %s, status_equipamento = %s
+            WHERE id_extintor = %s
+        """
+        cursor.execute(
+            q,
+            (
+                dados["qr_code"],
+                dados["numero_serie"],
+                dados["fabricante"],
+                dados["tipo"],
+                dados["classificacao"],
+                dados["capacidade_carga"],
+                dados["unidade_medida"],
+                dados["data_fabricacao"],
+                dados["data_validade_carga"],
+                dados["localizacao_atual"],
+                dados.get("status_equipamento", "Ativo"),
+                id_extintor,
+            ),
+        )
+        conn.commit()
+
+        if cursor.rowcount == 0:
+            return jsonify({"erro": "Extintor não encontrado"}), 404
+
+        return jsonify({"mensagem": "Extintor atualizado com sucesso"}), 200
+    except Error as e:
+        if conn:
+            conn.rollback()
+        return jsonify({"erro": "Erro no banco de dados", "detalhes": str(e)}), 500
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
+
+@app.route("/extintores/<int:id_extintor>", methods=["DELETE"])
+def deletar_extintor(id_extintor):
+    """Remove um extintor (inspeções vinculadas são removidas em cascata)."""
+    conn = None
+    cursor = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM Extintores WHERE id_extintor = %s", (id_extintor,))
+        conn.commit()
+
+        if cursor.rowcount == 0:
+            return jsonify({"erro": "Extintor não encontrado"}), 404
+
+        return jsonify({"mensagem": "Extintor removido com sucesso"}), 200
+    except Error as e:
+        if conn:
+            conn.rollback()
         return jsonify({"erro": "Erro no banco de dados", "detalhes": str(e)}), 500
     finally:
         if cursor:
@@ -497,7 +880,11 @@ def criar_inspecao():
             enviar_notificacao_manutencao(notificar_extintor_id, notificar_motivo)
 
         return (
-            jsonify({"mensagem": "Inspeção realizada com sucesso!", "resultado_analise": situacao_final}),
+            jsonify({
+                "mensagem": "Inspeção realizada com sucesso!",
+                "id_inspecao": id_nova_inspecao,
+                "resultado_analise": situacao_final,
+            }),
             201,
         )
 
@@ -505,6 +892,159 @@ def criar_inspecao():
         if conn:
             conn.rollback()
         return jsonify({"erro": "Erro ao processar inspeção", "detalhes": str(e)}), 500
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
+
+@app.route("/inspecoes", methods=["GET"])
+def listar_inspecoes():
+    conn = None
+    cursor = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT * FROM Inspecoes")
+        res = cursor.fetchall()
+        return jsonify(converter_datas_e_horas(res)), 200
+    except Error as e:
+        return jsonify({"erro": "Erro no banco de dados", "detalhes": str(e)}), 500
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
+
+@app.route("/inspecoes/<int:id_inspecao>", methods=["GET"])
+def obter_inspecao(id_inspecao):
+    conn = None
+    cursor = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT * FROM Inspecoes WHERE id_inspecao = %s", (id_inspecao,))
+        res = cursor.fetchone()
+        if not res:
+            return jsonify({"erro": "Inspeção não encontrada"}), 404
+        return jsonify(converter_datas_e_horas(res)), 200
+    except Error as e:
+        return jsonify({"erro": "Erro no banco de dados", "detalhes": str(e)}), 500
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
+
+@app.route("/inspecoes/<int:id_inspecao>", methods=["PUT"])
+def atualizar_inspecao(id_inspecao):
+    """Atualiza uma inspeção e mantém o relatório/status do extintor coerentes com o novo resultado."""
+    dados = request.get_json()
+    campos_obrigatorios = [
+        "id_extintor", "data_inspecao", "hora_inspecao", "numero_lacre",
+        "confirmar_tipo", "status_manometro", "status_lacre", "status_bocal", "avaria_externa",
+    ]
+    if not dados:
+        return jsonify({"erro": "JSON ausente"}), 400
+    for campo in campos_obrigatorios:
+        if campo not in dados:
+            return jsonify({"erro": f"Campo obrigatório: {campo}"}), 400
+
+    conn = None
+    cursor = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor()
+
+        q_update = """
+            UPDATE Inspecoes
+            SET id_brigadista = %s, id_extintor = %s, data_inspecao = %s, hora_inspecao = %s,
+                numero_lacre = %s, confirmar_tipo = %s, status_manometro = %s, status_lacre = %s,
+                status_bocal = %s, avaria_externa = %s, observacoes = %s
+            WHERE id_inspecao = %s
+        """
+        cursor.execute(
+            q_update,
+            (
+                dados.get("id_brigadista"),
+                dados["id_extintor"],
+                dados["data_inspecao"],
+                dados["hora_inspecao"],
+                dados["numero_lacre"],
+                dados["confirmar_tipo"],
+                dados["status_manometro"],
+                dados["status_lacre"],
+                dados["status_bocal"],
+                dados["avaria_externa"],
+                dados.get("observacoes"),
+                id_inspecao,
+            ),
+        )
+
+        if cursor.rowcount == 0:
+            conn.rollback()
+            return jsonify({"erro": "Inspeção não encontrada"}), 404
+
+        motivos_reprovacao = []
+        if dados["status_manometro"] != "Normal":
+            motivos_reprovacao.append(f"Manômetro {dados['status_manometro']}")
+        if dados["status_lacre"] != "Intacto":
+            motivos_reprovacao.append(f"Lacre {dados['status_lacre']}")
+        if dados["status_bocal"] != "Desobstruído":
+            motivos_reprovacao.append(f"Bocal {dados['status_bocal']}")
+        if dados["avaria_externa"] != "Nenhuma":
+            motivos_reprovacao.append(f"Avaria: {dados['avaria_externa']}")
+
+        if motivos_reprovacao:
+            situacao_final = f"REPROVADO: {', '.join(motivos_reprovacao)}"
+            cursor.execute(
+                "UPDATE Extintores SET status_equipamento = 'Em Manutenção' WHERE id_extintor = %s",
+                (dados["id_extintor"],),
+            )
+        else:
+            situacao_final = "Equipamento aprovado para uso"
+
+        # Mantém o relatório (gerado pelo gatilho na criação) sincronizado com a edição
+        cursor.execute(
+            "UPDATE Relatorios_Inspecao SET situacao = %s WHERE id_inspecao = %s",
+            (situacao_final, id_inspecao),
+        )
+
+        conn.commit()
+        return jsonify({"mensagem": "Inspeção atualizada com sucesso", "resultado_analise": situacao_final}), 200
+    except Error as e:
+        if conn:
+            conn.rollback()
+        return jsonify({"erro": "Erro ao atualizar inspeção", "detalhes": str(e)}), 500
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
+
+@app.route("/inspecoes/<int:id_inspecao>", methods=["DELETE"])
+def deletar_inspecao(id_inspecao):
+    """Remove uma inspeção (o relatório vinculado é removido em cascata)."""
+    conn = None
+    cursor = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM Inspecoes WHERE id_inspecao = %s", (id_inspecao,))
+        conn.commit()
+
+        if cursor.rowcount == 0:
+            return jsonify({"erro": "Inspeção não encontrada"}), 404
+
+        return jsonify({"mensagem": "Inspeção removida com sucesso"}), 200
+    except Error as e:
+        if conn:
+            conn.rollback()
+        return jsonify({"erro": "Erro no banco de dados", "detalhes": str(e)}), 500
     finally:
         if cursor:
             cursor.close()
@@ -690,6 +1230,72 @@ def obter_relatorio_treinamento(id_relatorio):
         if conn and conn.is_connected():
             conn.close()
 
+
+@app.route("/relatorios-treinamentos/<int:id_relatorio>", methods=["PUT"])
+def atualizar_relatorio_treinamento(id_relatorio):
+    """Atualiza a situação/observações de um relatório de treinamento."""
+    dados = request.get_json()
+    if not dados:
+        return jsonify({"erro": "JSON ausente"}), 400
+
+    campos_obrigatorios = ["situacao", "data_relatorio"]
+    for campo in campos_obrigatorios:
+        if campo not in dados:
+            return jsonify({"erro": f"Campo obrigatório: {campo}"}), 400
+
+    conn = None
+    cursor = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor()
+        q = """
+            UPDATE Relatorios_Treinamentos
+            SET situacao = %s, data_relatorio = %s, observacoes = %s
+            WHERE id_relatorio_treinamento = %s
+        """
+        cursor.execute(q, (dados["situacao"], dados["data_relatorio"], dados.get("observacoes"), id_relatorio))
+        conn.commit()
+
+        if cursor.rowcount == 0:
+            return jsonify({"erro": "Relatório não encontrado"}), 404
+
+        return jsonify({"mensagem": "Relatório de treinamento atualizado com sucesso"}), 200
+    except Error as e:
+        if conn:
+            conn.rollback()
+        return jsonify({"erro": "Erro ao atualizar relatório", "detalhes": str(e)}), 500
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
+
+@app.route("/relatorios-treinamentos/<int:id_relatorio>", methods=["DELETE"])
+def deletar_relatorio_treinamento(id_relatorio):
+    conn = None
+    cursor = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM Relatorios_Treinamentos WHERE id_relatorio_treinamento = %s", (id_relatorio,))
+        conn.commit()
+
+        if cursor.rowcount == 0:
+            return jsonify({"erro": "Relatório não encontrado"}), 404
+
+        return jsonify({"mensagem": "Relatório de treinamento removido com sucesso"}), 200
+    except Error as e:
+        if conn:
+            conn.rollback()
+        return jsonify({"erro": "Erro no banco de dados", "detalhes": str(e)}), 500
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
+
 # ============================================================
 # ROTAS: RELATÓRIOS DE INSPEÇÃO
 # ============================================================
@@ -836,6 +1442,67 @@ def obter_relatorio_inspecao(id_relatorio):
         return jsonify(res_tratado), 200
     except Error as e:
         return jsonify({"erro": "Erro ao buscar relatório de inspeção", "detalhes": str(e)}), 500
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
+
+@app.route("/relatorios-inspecoes/<int:id_relatorio>", methods=["PUT"])
+def atualizar_relatorio_inspecao(id_relatorio):
+    """Atualiza a situação de um relatório de inspeção."""
+    dados = request.get_json()
+    if not dados:
+        return jsonify({"erro": "JSON ausente"}), 400
+
+    if "situacao" not in dados:
+        return jsonify({"erro": "Campo obrigatório: situacao"}), 400
+
+    conn = None
+    cursor = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE Relatorios_Inspecao SET situacao = %s WHERE id_relatorio = %s",
+            (dados["situacao"], id_relatorio),
+        )
+        conn.commit()
+
+        if cursor.rowcount == 0:
+            return jsonify({"erro": "Relatório de inspeção não encontrado"}), 404
+
+        return jsonify({"mensagem": "Relatório de inspeção atualizado com sucesso"}), 200
+    except Error as e:
+        if conn:
+            conn.rollback()
+        return jsonify({"erro": "Erro ao atualizar relatório de inspeção", "detalhes": str(e)}), 500
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
+
+@app.route("/relatorios-inspecoes/<int:id_relatorio>", methods=["DELETE"])
+def deletar_relatorio_inspecao(id_relatorio):
+    conn = None
+    cursor = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM Relatorios_Inspecao WHERE id_relatorio = %s", (id_relatorio,))
+        conn.commit()
+
+        if cursor.rowcount == 0:
+            return jsonify({"erro": "Relatório de inspeção não encontrado"}), 404
+
+        return jsonify({"mensagem": "Relatório de inspeção removido com sucesso"}), 200
+    except Error as e:
+        if conn:
+            conn.rollback()
+        return jsonify({"erro": "Erro no banco de dados", "detalhes": str(e)}), 500
     finally:
         if cursor:
             cursor.close()
